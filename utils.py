@@ -25,27 +25,27 @@ class CT3DDataset(Dataset):
                 target = target_data.get_fdata()
 
                 image, target = remove_no_lung_slice(image, target)
+                image = image.astype('float32')
+                target = target.astype('float32')
 
                 slices = image.shape[-1]
                 for i in range(slices):
-                    self.image_slices.append(image[:, :, i])
-                    self.target_slices.append(target[:, :, i])
+                    self.image_slices.append(np.expand_dims(image[:, :, i], -1))
+                    self.target_slices.append(np.expand_dims(target[:, :, i], -1))
         else:
             for image_path in images:
                 image_data = nib.load(image_path)
                 image = image_data.get_fdata()
                 slices = image.shape[-1]
                 for i in range(slices):
-                    self.image_slices.append(image[:, :, i])
+                    self.image_slices.append(np.expand_dims(image[:, :, i], -1))
 
     def __getitem__(self, item):
         assert len(self.image_slices) == len(self.target_slices)
         image_slice = self.image_slices[item]
-        image_slice = torch.from_numpy(image_slice)
         target_slice = None
         if self.target_slices is not None:
             target_slice = self.target_slices[item]
-            target_slice = torch.from_numpy(target_slice)
         if self.transforms is not None:
             image_slice, target_slice = self.transforms(image_slice, target_slice)
         return image_slice, target_slice
@@ -65,9 +65,10 @@ def split_train_val(data_path, target_path=None, val_size=0.2):
     data_length = len(data_path)
     val_length = int(data_length * val_size)
     train_length = data_length - val_length
-    np.random.seed(42)
 
+    np.random.seed(42)
     np.random.shuffle(data_path)
+
     train_path = data_path[: train_length]
     val_path = data_path[train_length:]
     if target_path is not None:
@@ -78,6 +79,25 @@ def split_train_val(data_path, target_path=None, val_size=0.2):
         val_mask_path = target_path[train_length:]
         return train_path, train_mask_path, val_path, val_mask_path
     return train_path, val_path
+
+
+def get_relate_target(image_paths, target_paths, dataset='B'):
+    """可能由于系统的缘故，文件夹下面的文件排列顺序是不一致的，因此需要将图像和其对应的标签图按顺序进行对齐
+
+    """
+    reordered_target_paths = []
+    if dataset == 'B':
+        for path in image_paths:
+            split_str = path.split('_ct')
+            name_prefix = split_str[0]
+            name_suffix = split_str[-1]
+            target_path = name_prefix + '_seg' + name_suffix
+            if target_path not in target_paths:
+                raise RuntimeError('target path is not exist!')
+            reordered_target_paths.append(target_path)
+    elif dataset == 'A':
+        pass
+    return reordered_target_paths
 
 
 def volume_resample(image_volume, target_volume=None):
@@ -145,21 +165,23 @@ def _search_index(target_volume, left, right, reverse=False):
     #     _search_index(target_volume, left, right)
 
 
-def load_dataset(dataset_select='B', batch_size=1, train=True):
+def load_dataset(dataset_select='B', batch_size=1, train=True, train_transforms=None, test_transforms=None):
     image_paths = []
     target_paths = []
     if train:
         if dataset_select.find('A') != -1:
-            image_paths.extend(glob('D:/dataset/COVID-19-CT-Seg_20cases/COVID-19-CT-Seg_20cases/*'))
-            target_paths.extend(glob('D:/dataset/COVID-19-CT-Seg_20cases/Lung_and_Infection_Mask/*'))
+            image_paths.extend(glob('/home/ivan/Xiong/COVID-19-CT-Seg_20cases/COVID-19-CT-Seg_20cases/*'))
+            target_paths.extend(glob('/home/ivan/Xiong/COVID-19-CT-Seg_20cases/Lung_and_Infection_Mask/*'))
+            target_paths = get_relate_target(image_paths, target_paths, dataset='A')
         if dataset_select.find('B') != -1:
-            data_path = glob('D:/dataset/COVID-19-20/COVID-19-20_v2/Train/*')
+            data_path = glob('/home/ivan/Xiong/COVID-19-20/COVID-19-20_v2/Train/*')
             image_paths.extend([path for path in data_path if path.find('ct') != -1])
             target_paths.extend([path for path in data_path if path.find('seg') != -1])
+            target_paths = get_relate_target(image_paths, target_paths, dataset='B')
         # 从训练集中分割出验证集
         train_paths, train_mask_paths, val_paths, val_mask_paths = split_train_val(image_paths, target_paths)
-        train_dataset = CT3DDataset(train_paths, train_mask_paths)
-        val_dataset = CT3DDataset(val_paths, val_mask_paths)
+        train_dataset = CT3DDataset(train_paths, train_mask_paths, transforms=train_transforms)
+        val_dataset = CT3DDataset(val_paths, val_mask_paths, transforms=test_transforms)
         # 获取训练集和验证集的DataLoader
         train_loader = DataLoader(train_dataset, shuffle=True, batch_size=batch_size, drop_last=True)
         val_loader = DataLoader(val_dataset, shuffle=True, batch_size=batch_size, drop_last=False)
@@ -169,8 +191,8 @@ def load_dataset(dataset_select='B', batch_size=1, train=True):
 
 
 def show_ct(path):
-    image_path = 'D:/dataset/COVID-19-20/COVID-19-20_v2/Train/volume-covid19-A-0011_ct.nii.gz'
-    target_path = 'D:/dataset/COVID-19-20/COVID-19-20_v2/Train/volume-covid19-A-0011_seg.nii.gz'
+    image_path = '/home/ivan/Xiong/COVID-19-20/COVID-19-20_v2/Train/volume-covid19-A-0011_ct.nii.gz'
+    target_path = '/home/ivan/Xiong/COVID-19-20/COVID-19-20_v2/Train/volume-covid19-A-0011_seg.nii.gz'
     image_data = nib.load(image_path)
     target_data = nib.load(target_path)
     image = image_data.get_fdata()
@@ -188,8 +210,8 @@ def show_ct(path):
 
 
 if __name__ == '__main__':
-    image_path = 'D:/dataset/COVID-19-20/COVID-19-20_v2/Train/volume-covid19-A-0003_ct.nii.gz'
-    target_path = 'D:/dataset/COVID-19-20/COVID-19-20_v2/Train/volume-covid19-A-0003_seg.nii.gz'
+    image_path = '/home/ivan/Xiong/COVID-19-20/COVID-19-20_v2/Train/volume-covid19-A-0003_ct.nii.gz'
+    target_path = '/home/ivan/Xiong/COVID-19-20/COVID-19-20_v2/Train/volume-covid19-A-0003_seg.nii.gz'
     image_data = nib.load(image_path)
     target_data = nib.load(target_path)
     image = image_data.get_fdata()
