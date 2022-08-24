@@ -13,7 +13,7 @@ class CT3DDataset(Dataset):
     :param images: 3D CT图像的路径
     """
 
-    def __init__(self, images, targets=None, transforms=None):
+    def __init__(self, images, targets=None, transforms=None, train=True):
         self.transforms = transforms
         self.image_slices = []
         self.target_slices = []
@@ -24,7 +24,15 @@ class CT3DDataset(Dataset):
                 image = image_data.get_fdata()
                 target = target_data.get_fdata()
 
-                image, target = remove_no_lung_slice(image, target)
+                # 只对训练集进行去除不包含肺部切片的处理
+                if train:
+                    image, target = remove_no_lung_slice(image, target)
+
+                # 对训练集和验证集同时进行去除不包含肺部切片的处理
+                # image, target = remove_no_lung_slice(image, target)
+
+                # 对训练集和验证集合都不进行去除不包含肺部切片的处理
+
                 image = image.astype('float32')
                 target = target.astype('float32')
 
@@ -96,7 +104,14 @@ def get_relate_target(image_paths, target_paths, dataset='B'):
                 raise RuntimeError('target path is not exist!')
             reordered_target_paths.append(target_path)
     elif dataset == 'A':
-        pass
+        for path in image_paths:
+            split_str = path.split('.nii')
+            name_prefix = split_str[0]
+            name_suffix = split_str[-1]
+            target_path = name_prefix + '.nii' + name_suffix
+            if target_path not in target_paths:
+                raise RuntimeError('target path is not exist!')
+            reordered_target_paths.append(target_path)
     return reordered_target_paths
 
 
@@ -171,7 +186,7 @@ def load_dataset(dataset_select='B', batch_size=1, train=True, train_transforms=
     if train:
         if dataset_select.find('A') != -1:
             image_paths.extend(glob('/home/ivan/Xiong/COVID-19-CT-Seg_20cases/COVID-19-CT-Seg_20cases/*'))
-            target_paths.extend(glob('/home/ivan/Xiong/COVID-19-CT-Seg_20cases/Lung_and_Infection_Mask/*'))
+            target_paths.extend(glob('/home/ivan/Xiong/COVID-19-CT-Seg_20cases/Infection_Mask/*'))
             target_paths = get_relate_target(image_paths, target_paths, dataset='A')
         if dataset_select.find('B') != -1:
             data_path = glob('/home/ivan/Xiong/COVID-19-20/COVID-19-20_v2/Train/*')
@@ -180,8 +195,8 @@ def load_dataset(dataset_select='B', batch_size=1, train=True, train_transforms=
             target_paths = get_relate_target(image_paths, target_paths, dataset='B')
         # 从训练集中分割出验证集
         train_paths, train_mask_paths, val_paths, val_mask_paths = split_train_val(image_paths, target_paths)
-        train_dataset = CT3DDataset(train_paths, train_mask_paths, transforms=train_transforms)
-        val_dataset = CT3DDataset(val_paths, val_mask_paths, transforms=test_transforms)
+        train_dataset = CT3DDataset(train_paths, train_mask_paths, transforms=train_transforms, train=True)
+        val_dataset = CT3DDataset(val_paths, val_mask_paths, transforms=test_transforms, train=False)
         # 获取训练集和验证集的DataLoader
         train_loader = DataLoader(train_dataset, shuffle=True, batch_size=batch_size, drop_last=True)
         val_loader = DataLoader(val_dataset, shuffle=True, batch_size=batch_size, drop_last=False)
