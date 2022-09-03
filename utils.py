@@ -3,7 +3,6 @@ from glob import glob
 import matplotlib.pyplot as plt
 import nibabel as nib
 import numpy as np
-import torch
 from nibabel.viewers import OrthoSlicer3D
 from torch.utils.data import DataLoader, Dataset
 
@@ -13,6 +12,7 @@ class CT3DDataset(Dataset):
     :param images: 3D CT图像的路径
     """
 
+    # noinspection PyShadowingNames
     def __init__(self, images, targets=None, transforms=None, train=True):
         self.transforms = transforms
         self.image_slices = []
@@ -89,6 +89,7 @@ def split_train_val(data_path, target_path=None, val_size=0.2):
     return train_path, val_path
 
 
+# noinspection PyShadowingNames
 def get_relate_target(image_paths, target_paths, dataset='B'):
     """可能由于系统的缘故，文件夹下面的文件排列顺序是不一致的，因此需要将图像和其对应的标签图按顺序进行对齐
 
@@ -205,6 +206,7 @@ def load_dataset(dataset_select='B', batch_size=1, train=True, train_transforms=
         pass
 
 
+# noinspection PyShadowingNames
 def show_ct(path):
     image_path = '/home/ivan/Xiong/COVID-19-20/COVID-19-20_v2/Train/volume-covid19-A-0011_ct.nii.gz'
     target_path = '/home/ivan/Xiong/COVID-19-20/COVID-19-20_v2/Train/volume-covid19-A-0011_seg.nii.gz'
